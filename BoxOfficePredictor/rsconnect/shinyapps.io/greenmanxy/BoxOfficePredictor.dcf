@@ -1,0 +1,12 @@
+name: BoxOfficePredictor
+title: BoxOfficePredictor
+username: greenmanxy
+account: greenmanxy
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 13302065
+bundleId: 9364619
+url: https://greenmanxy.shinyapps.io/BoxOfficePredictor/
+version: 1
+asMultiple: FALSE
+asStatic: FALSE

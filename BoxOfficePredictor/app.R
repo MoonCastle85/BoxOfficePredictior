@@ -24,21 +24,16 @@ library(xgboost)
 library(nnet)
 library(glmnet)
 
-temp_file2 <- tempfile(fileext = ".RData")
-download.file("https://github.com/MoonCastle85/BoxOfficePredictior/raw/refs/heads/main/Input%20options.RData", temp_file2)
-load(temp_file2, envir = environment())
-unlink(temp_file2)
+# Load preprocessed data
+load("data/Final ensamble model.RData")
+load("data/Input options.RData")
+load("data/KNN lookup data.RData")
+load("data/Worldwide_adj lambda.RData")
 
 my_ui <- fluidPage(
   theme = shinytheme("cerulean"),
   shinyjs::useShinyjs(),
-  tags$style(HTML("
-      .btn-disabled {
-        pointer-events: none;
-        opacity: 0.5;
-      }
-    ")),
-  
+
   # Application title
   titlePanel("Box office predictor v1.0"),
   
@@ -69,52 +64,28 @@ my_ui <- fluidPage(
       selectInput(inputId = "dir_count", label = "How many films has the director directed as a lead director?",
                   choices = c("One", "Two", "Three", "Four", "Five", "Six", "Seven", "More than seven"), selected = "One"), 
       selectInput(inputId = "actor_count", label = "How many films has the main actor/actress been involved in as a lead?",
-                  choices = c("One", "More than one", "Unknown"), selected = "One")
+                  choices = c("One", "More than one", "Unknown"), selected = "One"),
+      div(actionButton("btnpred", "Predict!", icon = icon("calculator", lib = "font-awesome"), class = "btn-primary"),
+          style = "display: flex; justify-content: center;"
+      )
     ),
     
     # Show a plot of the generated distribution
     mainPanel(
-      tags$div(
-        textOutput("pred_label"),
-        style = "text-align: center; font-size: 24px; font-family: Roboto, sans-serif; color: blue;"
-      ),
-      tags$div(
-        withSpinner(textOutput("prediction")),
-        style = "text-align: center; font-size: 60px; font-family: Roboto, sans-serif; color: blue;"
-      ),
+      h3("Predicted box office result. Based on 8000 films from 1993-2023.",
+         style = "text-align: center; font-size: 24px;"),
+      div(withSpinner(textOutput("prediction")), style = "text-align: center; font-size: 60px;"),
       br(),
       hr(),
       br(),
       h3("Below are the three most similar films from the database that match the one you defined",
-         style = "text-align: center; font-size: 24px; font-family: Roboto, sans-serif; color: blue;"),
-      tags$div(
-        withSpinner(DT::DTOutput("knn_table")),
-        style = "text-align: center; font-size: 14px; font-family: Roboto, sans-serif; color: blue;"
-      )
+         style = "text-align: center; font-size: 24px;"),
+      withSpinner(DT::DTOutput("knn_table")) #, style = "text-align: center; font-size: 14px;"))
     )
   )
 )
 
 my_server <- function(input, output) {
-  # Load preprocessed data
-  temp_file <- tempfile(fileext = ".RData")
-  download.file("https://github.com/MoonCastle85/BoxOfficePredictior/raw/refs/heads/main/Final%20ensamble%20model.RData", 
-                temp_file)
-  load(temp_file, envir = environment())
-  unlink(temp_file)
-  
-  temp_file3 <- tempfile(fileext = ".RData")
-  download.file("https://github.com/MoonCastle85/BoxOfficePredictior/raw/refs/heads/main/Worldwide_adj%20lambda.RData", 
-                temp_file3)
-  load(temp_file3, envir = environment())
-  unlink(temp_file3)
-  
-  temp_file4 <- tempfile(fileext = ".RData")
-  download.file("https://github.com/MoonCastle85/BoxOfficePredictior/raw/refs/heads/main/KNN%20lookup%20data.RData", 
-                temp_file4)
-  load(temp_file4, envir = environment())
-  unlink(temp_file4)
-
   # Bind input data and predict
   new_data <- reactive({
     new_data <- tibble(tconst = "tt0468569",
@@ -161,7 +132,7 @@ my_server <- function(input, output) {
     return(new_data)
   })
     
-    new_prediction <- reactive({
+    new_prediction <- eventReactive(input$btnpred, {
       new_pred <- predict(fitted_ens, new_data()) %>%
         transmute(new_pred = (Worldwide_adj_lambda*.pred+1)^(1/Worldwide_adj_lambda)) %>%
         pull(new_pred)
@@ -170,7 +141,7 @@ my_server <- function(input, output) {
   })
   
   # Predict KNN lookup
-  lookup_table <- reactive({
+  lookup_table <- eventReactive(input$btnpred, {
     train_data <- knn_data %>%
       bake(new_data = NULL) %>%
       select(-contains("orig"), -tconst, -primaryTitle)
@@ -197,7 +168,6 @@ my_server <- function(input, output) {
     return(nn_knn)
   })
   
-  output$pred_label <- renderText({"Predicted global box office revenue:"})
   output$prediction <- renderText({label_currency(big.mark = " ")(round(new_prediction(), -4))})
   output$knn_table <- DT::renderDT(lookup_table(), escape = FALSE, 
                                    options = list(searching = FALSE, dom = 't',
