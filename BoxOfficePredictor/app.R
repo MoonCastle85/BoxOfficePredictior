@@ -1,7 +1,8 @@
 options(repos = c(CRAN = "https://cran.rstudio.com"))
 
 packages <- c("shiny", "shinythemes", "shinycssloaders", "shinyWidgets", "DT", "tidyverse", "tidymodels", "embed", 
-              "stacks", "scales", "baguette", "earth", "kknn", "rules", "kernlab", "ranger", "xgboost", "nnet", "glmnet")
+              "stacks", "scales", "baguette", "earth", "kknn", "rules", "kernlab", "ranger", "xgboost", "nnet", "glmnet",
+              "emayili", "config")
 
 new_packages <- packages[!(packages %in% installed.packages()[, "Package"])]
 if(length(new_packages)) install.packages(new_packages)
@@ -23,12 +24,24 @@ library(ranger)
 library(xgboost)
 library(nnet)
 library(glmnet)
+library(emayili)
+library(config)
 
 # Load preprocessed data
 load("data/Final ensamble model.RData")
 load("data/Input options.RData")
 load("data/KNN lookup data.RData")
 load("data/Worldwide_adj lambda.RData")
+
+# Set up email service
+config <- config::get()
+
+smtp <- server(
+  host = "smtp.titan.email",
+  port = 465,
+  username = config$MY_USERNAME,
+  password = config$MY_PASSWORD
+)
 
 my_ui <- fluidPage(
   theme = shinytheme("cerulean"),
@@ -46,8 +59,8 @@ my_ui <- fluidPage(
       selectInput(inputId = "main_prod_company", label = "Which is the lead production company of the film?",
                   choices = dplyr::filter(options_list, name == "prod_company_options") %>% pull(value) %>% sort(), 
                   selected = "Warner Bros."),
-      autonumericInput(inputId = "budget", 
-                       label = "What is the (approximate) budget for the film, excluding marketing? Scroll to change.",
+      autonumericInput(inputId = "budget", currencySymbol = "$",
+                       label = "What is the budget (USD) for the film, excluding marketing? Scroll to change.",
                        value = 185000000, minimumValue = 1000000, maximumValue = 500000000, wheelStep = 5000000, 
                        decimalPlaces = 0, digitGroupSeparator = " ", align = "left"),
       numericInput(inputId = "runtime", label = "What is the (approximate) runtime of the film in minutes?", 
@@ -74,18 +87,45 @@ my_ui <- fluidPage(
     mainPanel(
       h3("Predicted box office result. Based on 8000 films from 1993-2023.",
          style = "text-align: center; font-size: 24px;"),
-      div(withSpinner(textOutput("prediction")), style = "text-align: center; font-size: 60px;"),
+      h2(withSpinner(textOutput("prediction")), style = "text-align: center; font-size: 60px;"),
       br(),
       hr(),
       br(),
       h3("Below are the three most similar films from the database that match the one you defined",
          style = "text-align: center; font-size: 24px;"),
-      withSpinner(DT::DTOutput("knn_table")) #, style = "text-align: center; font-size: 14px;"))
+      withSpinner(DT::DTOutput("knn_table")),
+      br(),
+      br(),
+      hr(),
+      div(
+        style = "text-align: center;",
+        prettyRadioButtons(
+          inputId = "feedback",
+          label = "What do you think of the app?",
+          choices = c("Useful", "Not very useful"),
+          inline = TRUE,
+          icon = icon("check"),
+          animation = "tada",
+          status = "info"
+        )
+      ),
+      div(
+        style = "display: flex; flex-direction: column; justify-content: center; align-items: center;",
+        br(),
+        div(style = "text-align: center;",
+            textInputIcon("email", 
+                          label = HTML("Leave your email for further contact<br>(it will NOT be shared to third parties)"), 
+                                       icon = icon("envelope"))
+        ),
+        actionButton("submit", "Send feedback", class = "btn-info")
+      )
     )
   )
 )
 
-my_server <- function(input, output) {
+my_server <- function(input, output, session) {
+  readRenviron(".Renviron")
+  
   # Bind input data and predict
   new_data <- reactive({
     new_data <- tibble(tconst = "tt0468569",
@@ -173,6 +213,54 @@ my_server <- function(input, output) {
                                    options = list(searching = FALSE, dom = 't',
                                                   columnDefs = list(list(targets = c(1:2, 4:6, 9), className = "dt-left"),
                                                                     list(targets = c(3, 7:8), className = "dt-center"))))
+  
+  is_valid_email <- function(email) {
+    str_detect(email, "^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")
+  }
+
+  observeEvent(input$submit, {
+    sendSweetAlert(
+      session = session,
+      title = NULL,
+      text = tags$div(
+        style = "display: flex; align-items: center; justify-content: center; flex-direction: column;",
+        tags$div(id = "spinner", style = "margin-bottom: 10px;", 
+                 tags$img(src = "spinner.gif", width = "50")), # Add a spinner gif or animation
+        "Email is being sent. Please wait..."
+      ),
+      type = "info",
+      html = TRUE,
+      showCloseButton = FALSE,
+      showConfirmButton = FALSE,
+      closeOnClickOutside = FALSE
+    )
+    
+    if(input$email == "" | !is_valid_email(input$email)) {
+      sendSweetAlert(
+        session = session,
+        title = "Failed...",
+        text = "Please provide a valid email adress.",
+        type = "warning"
+      )
+    } else {
+      email <- envelope(
+        from = config$MY_USERNAME,
+        to = config$MY_USERNAME,
+        subject = input$email,
+        text = input$feedback
+      )
+      
+      showSpinner("submit")
+      smtp(email, verbose = TRUE)
+      
+      sendSweetAlert(
+        session = session,
+        title = "Feedback sent!",
+        text = "Thank you! I might email you for further suggestions.",
+        type = "success"
+      )
+    }
+  })
 }
 
 # Run the application 
