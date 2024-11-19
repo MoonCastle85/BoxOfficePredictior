@@ -61,13 +61,14 @@ my_ui <- fluidPage(
                   selected = "Warner Bros."),
       autonumericInput(inputId = "budget", currencySymbol = "$",
                        label = "What is the budget (USD) for the film, excluding marketing? Scroll to change.",
-                       value = 185000000, minimumValue = 1000000, maximumValue = 500000000, wheelStep = 5000000, 
+                       value = 185000000, minimumValue = 0, maximumValue = 500000000, wheelStep = 5000000, 
                        decimalPlaces = 0, digitGroupSeparator = " ", align = "left"),
-      numericInput(inputId = "runtime", label = "What is the (approximate) runtime of the film in minutes?", 
-                   value = 152, min = 60, max = 500, step = 5),
-      textInput(inputId = "writer", label = "Who is the lead writer?", value = "Jonathan Nolan"),
-      textInput(inputId = "director", label = "Who is the lead director?", value = "Christopher Nolan"),
-      textInput(inputId = "main_actor", label = "Who is the lead actor/actress?", value = "Christian Bale"),
+      autonumericInput(inputId = "runtime", currencySymbol = " mins", currencySymbolPlacement = "s",
+                       label = "What is the (approximate) runtime of the film in minutes? Scroll to change.",
+                       value = 152, min = 0, max = 500, wheelStep = 5, decimalPlaces = 0, align = "left"),
+      selectizeInput(inputId = "writer", label = "Who is the lead writer?", choices = "Jonathan Nolan"),
+      selectizeInput(inputId = "director", label = "Who is the lead director?", choices = "Christopher Nolan"),
+      selectizeInput(inputId = "main_actor", label = "Who is the lead actor/actress?", choices = "Christian Bale"),
       selectInput(inputId = "wri_count_movie", label = "How many writers are involved in the film?",
                   choices = c("One", "Two", "Three", "Four", "More than four"), selected = "One"),
       selectInput(inputId = "wri_count", label = "How many films has the writer been involved in as a lead writer?",
@@ -124,7 +125,15 @@ my_ui <- fluidPage(
 )
 
 my_server <- function(input, output, session) {
-  readRenviron(".Renviron")
+  updateSelectizeInput(session, "writer", selected = "Jonathan Nolan",
+                       choices = dplyr::filter(options_list, name == "main_wri_options") %>% pull(value) %>% sort(),
+                       server = TRUE)
+  updateSelectizeInput(session, "director", selected = "Christopher Nolan",
+                       choices = dplyr::filter(options_list, name == "main_dir_options") %>% pull(value) %>% sort(),
+                       server = TRUE)
+  updateSelectizeInput(session, "main_actor", selected = "Christian Bale",
+                       choices = dplyr::filter(options_list, name == "main_actor_options") %>% pull(value) %>% sort(),
+                       server = TRUE)
   
   # Bind input data and predict
   new_data <- reactive({
